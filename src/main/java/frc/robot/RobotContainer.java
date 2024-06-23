@@ -7,7 +7,7 @@ package frc.robot;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
-import frc.robot.subsystems.SwerveSubsystem;
+import frc.robot.subsystems.DriveTrain;
 import java.io.File;
 
 /**
@@ -23,7 +23,7 @@ public class RobotContainer {
     // Replace with CommandPS4Controller or CommandJoystick if needed
     final CommandXboxController driverXbox = new CommandXboxController(0);
     // The robot's subsystems and commands are defined here...
-    private final SwerveSubsystem drivebase = new SwerveSubsystem(new File(Filesystem.getDeployDirectory(),
+    private final DriveTrain drivebase = new DriveTrain(new File(Filesystem.getDeployDirectory(),
             "swerve/neo"));
 
     /**

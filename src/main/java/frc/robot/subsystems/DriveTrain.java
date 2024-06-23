@@ -22,19 +22,22 @@ import swervelib.SwerveController;
 import swervelib.SwerveDrive;
 import swervelib.SwerveDriveTest;
 import swervelib.math.SwerveMath;
-import swervelib.parser.SwerveControllerConfiguration;
 import swervelib.parser.SwerveDriveConfiguration;
 import swervelib.parser.SwerveParser;
 import swervelib.telemetry.SwerveDriveTelemetry;
 import swervelib.telemetry.SwerveDriveTelemetry.TelemetryVerbosity;
 
-public class SwerveSubsystem extends SubsystemBase {
+public class DriveTrain extends SubsystemBase {
 
     private static final double MAX_SPEED = Units.feetToMeters(14.5);
 
-    /**
-     * Swerve drive object.
-     */
+    private static final double STEER_GEAR_RATIO = (50.0 / 14.0) * (60.0 / 10.0);
+
+    private static final double WHEEL_DIAMETER = Units.inchesToMeters(4.0);
+    // This is the L2 gearing
+    private static final double DRIVE_GEAR_RATIO = (50.0 / 14.0) * (17.0 / 27.0) * (45.0 / 15.0);
+
+    // Swerve drive object
     private final SwerveDrive swerveDrive;
 
     /**
@@ -42,18 +45,19 @@ public class SwerveSubsystem extends SubsystemBase {
      *
      * @param directory Directory of swerve drive config files.
      */
-    public SwerveSubsystem(File directory) {
+    public DriveTrain(File directory) {
         // Angle conversion factor is 360 / (GEAR RATIO * ENCODER RESOLUTION)
         // In this case the gear ratio is 12.8 motor revolutions per wheel rotation.
         // The encoder resolution per motor revolution is 1 per motor revolution.
-        double angleConversionFactor = SwerveMath.calculateDegreesPerSteeringRotation(12.8);
+        double angleConversionFactor = SwerveMath.calculateDegreesPerSteeringRotation(STEER_GEAR_RATIO);
 
         // Motor conversion factor is (PI * WHEEL DIAMETER IN METERS) / (GEAR RATIO * ENCODER RESOLUTION).
         // In this case the wheel diameter is 4 inches, which must be converted to
         // meters to get meters/second.
         // The gear ratio is 6.75 motor revolutions per wheel rotation.
         // The encoder resolution per motor revolution is 1 per motor revolution.
-        double driveConversionFactor = SwerveMath.calculateMetersPerRotation(Units.inchesToMeters(4), 6.75);
+        double driveConversionFactor = SwerveMath.calculateMetersPerRotation(WHEEL_DIAMETER, DRIVE_GEAR_RATIO);
+
         // System.out.println("\"conversionFactor\": {");
         // System.out.println("\t\"angle\": " + angleConversionFactor + ",");
         // System.out.println("\t\"drive\": " + driveConversionFactor);
