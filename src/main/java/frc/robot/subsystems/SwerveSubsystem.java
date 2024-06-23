@@ -4,10 +4,7 @@
 
 package frc.robot.subsystems;
 
-import edu.wpi.first.apriltag.AprilTagFieldLayout;
-import edu.wpi.first.apriltag.AprilTagFields;
 import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
@@ -15,8 +12,6 @@ import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.DriverStation.Alliance;
-import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Config;
@@ -36,14 +31,11 @@ import swervelib.telemetry.SwerveDriveTelemetry.TelemetryVerbosity;
 public class SwerveSubsystem extends SubsystemBase {
 
     private static final double MAX_SPEED = Units.feetToMeters(14.5);
+
     /**
      * Swerve drive object.
      */
     private final SwerveDrive swerveDrive;
-    /**
-     * AprilTag field layout.
-     */
-    private final AprilTagFieldLayout aprilTagFieldLayout = AprilTagFields.k2024Crescendo.loadAprilTagLayoutField();
 
     /**
      * Initialize {@link SwerveDrive} with the directory provided.
@@ -55,17 +47,17 @@ public class SwerveSubsystem extends SubsystemBase {
         // In this case the gear ratio is 12.8 motor revolutions per wheel rotation.
         // The encoder resolution per motor revolution is 1 per motor revolution.
         double angleConversionFactor = SwerveMath.calculateDegreesPerSteeringRotation(12.8);
-        // Motor conversion factor is (PI * WHEEL DIAMETER IN METERS) / (GEAR RATIO *
-        // ENCODER RESOLUTION).
+
+        // Motor conversion factor is (PI * WHEEL DIAMETER IN METERS) / (GEAR RATIO * ENCODER RESOLUTION).
         // In this case the wheel diameter is 4 inches, which must be converted to
         // meters to get meters/second.
         // The gear ratio is 6.75 motor revolutions per wheel rotation.
         // The encoder resolution per motor revolution is 1 per motor revolution.
         double driveConversionFactor = SwerveMath.calculateMetersPerRotation(Units.inchesToMeters(4), 6.75);
-        System.out.println("\"conversionFactor\": {");
-        System.out.println("\t\"angle\": " + angleConversionFactor + ",");
-        System.out.println("\t\"drive\": " + driveConversionFactor);
-        System.out.println("}");
+        // System.out.println("\"conversionFactor\": {");
+        // System.out.println("\t\"angle\": " + angleConversionFactor + ",");
+        // System.out.println("\t\"drive\": " + driveConversionFactor);
+        // System.out.println("}");
 
         // Configure the Telemetry before creating the SwerveDrive to avoid unnecessary
         // objects being created.
@@ -75,68 +67,16 @@ public class SwerveSubsystem extends SubsystemBase {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        swerveDrive.setHeadingCorrection(false); // Heading correction should only be used while controlling the robot
-                                                 // via angle.
+
+        // Heading correction should only be used while controlling the robot via angle.
+        swerveDrive.setHeadingCorrection(false);
+        
         swerveDrive.setCosineCompensator(false);// !SwerveDriveTelemetry.isSimulation); // Disables cosine compensation
                                                 // for simulations since it causes discrepancies not seen in real life.
     }
 
     /**
-     * Construct the swerve drive.
-     *
-     * @param driveCfg      SwerveDriveConfiguration for the swerve.
-     * @param controllerCfg Swerve Controller.
-     */
-    public SwerveSubsystem(SwerveDriveConfiguration driveCfg, SwerveControllerConfiguration controllerCfg) {
-        swerveDrive = new SwerveDrive(driveCfg, controllerCfg, MAX_SPEED);
-    }
-
-    /**
-     * Get the distance to the speaker.
-     *
-     * @return Distance to speaker in meters.
-     */
-    public double getDistanceToSpeaker() {
-        int allianceAprilTag = DriverStation.getAlliance().get() == Alliance.Blue ? 7 : 4;
-        // Taken from PhotonUtils.getDistanceToPose
-        Pose3d speakerAprilTagPose = aprilTagFieldLayout.getTagPose(allianceAprilTag).get();
-        return getPose().getTranslation().getDistance(speakerAprilTagPose.toPose2d().getTranslation());
-    }
-
-    /**
-     * Get the yaw to aim at the speaker.
-     *
-     * @return {@link Rotation2d} of which you need to achieve.
-     */
-    public Rotation2d getSpeakerYaw() {
-        int allianceAprilTag = DriverStation.getAlliance().get() == Alliance.Blue ? 7 : 4;
-        // Taken from PhotonUtils.getYawToPose()
-        Pose3d speakerAprilTagPose = aprilTagFieldLayout.getTagPose(allianceAprilTag).get();
-        Translation2d relativeTrl = speakerAprilTagPose.toPose2d().relativeTo(getPose()).getTranslation();
-        return new Rotation2d(relativeTrl.getX(), relativeTrl.getY()).plus(swerveDrive.getOdometryHeading());
-    }
-
-    /**
-     * Aim the robot at the speaker.
-     *
-     * @param tolerance Tolerance in degrees.
-     * @return Command to turn the robot to the speaker.
-     */
-    public Command aimAtSpeaker(double tolerance) {
-        SwerveController controller = swerveDrive.getSwerveController();
-        return run(
-                () -> {
-                    drive(ChassisSpeeds.fromFieldRelativeSpeeds(0,
-                            0,
-                            controller.headingCalculate(getHeading().getRadians(),
-                                    getSpeakerYaw().getRadians()),
-                            getHeading()));
-                }).until(() -> getSpeakerYaw().minus(getHeading()).getDegrees() < tolerance);
-    }
-
-    /**
-     * Command to drive the robot using translative values and heading as a
-     * setpoint.
+     * Command to drive the robot using translative values and heading as a setpoint.
      *
      * @param translationX Translation in the X direction. Cubed for smoother
      *                     controls.
@@ -165,8 +105,7 @@ public class SwerveSubsystem extends SubsystemBase {
     }
 
     /**
-     * Command to drive the robot using translative values and heading as a
-     * setpoint.
+     * Command to drive the robot using translative values and heading as a setpoint.
      *
      * @param translationX Translation in the X direction.
      * @param translationY Translation in the Y direction.
@@ -213,8 +152,7 @@ public class SwerveSubsystem extends SubsystemBase {
     }
 
     /**
-     * Command to drive the robot using translative values and heading as angular
-     * velocity.
+     * Command to drive the robot using translative values and heading as angular velocity.
      *
      * @param translationX     Translation in the X direction. Cubed for smoother
      *                         controls.
@@ -224,8 +162,7 @@ public class SwerveSubsystem extends SubsystemBase {
      *                         smoother controls.
      * @return Drive command.
      */
-    public Command driveCommand(DoubleSupplier translationX, DoubleSupplier translationY,
-            DoubleSupplier angularRotationX) {
+    public Command driveCommand(DoubleSupplier translationX, DoubleSupplier translationY, DoubleSupplier angularRotationX) {
         return run(() -> {
             // Make the robot move
             swerveDrive.drive(SwerveMath.cubeTranslation(new Translation2d(
@@ -304,10 +241,9 @@ public class SwerveSubsystem extends SubsystemBase {
 
     /**
      * Resets odometry to the given pose. Gyro angle and module positions do not
-     * need to be reset when calling this
-     * method. However, if either gyro angle or module position is reset, this must
-     * be called in order for odometry to
-     * keep working.
+     * need to be reset when calling this method. 
+     * However, if either gyro angle or module position is reset, this must
+     * be called in order for odometry to keep working.
      *
      * @param initialHolonomicPose The pose to set the odometry to
      */
@@ -490,12 +426,5 @@ public class SwerveSubsystem extends SubsystemBase {
      */
     public Rotation2d getPitch() {
         return swerveDrive.getPitch();
-    }
-
-    /**
-     * Add a fake vision reading for testing purposes.
-     */
-    public void addFakeVisionReading() {
-        swerveDrive.addVisionMeasurement(new Pose2d(3, 3, Rotation2d.fromDegrees(65)), Timer.getFPGATimestamp());
     }
 }
