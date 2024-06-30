@@ -4,20 +4,24 @@
 
 package frc.robot.subsystems;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
-import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Config;
+import frc.robot.Constants;
 
 import java.io.File;
+import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
+
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;
 import swervelib.SwerveDriveTest;
@@ -30,6 +34,8 @@ import swervelib.telemetry.SwerveDriveTelemetry.TelemetryVerbosity;
 public class DriveTrain extends SubsystemBase {
 
     private static final double MAX_SPEED = Units.feetToMeters(14.5);
+    
+    private static final double JOYSTICK_DEADBAND = 0.05;
 
     private static final double STEER_GEAR_RATIO = (50.0 / 14.0) * (60.0 / 10.0);
 
@@ -37,15 +43,26 @@ public class DriveTrain extends SubsystemBase {
     // This is the L2 gearing
     private static final double DRIVE_GEAR_RATIO = (50.0 / 14.0) * (17.0 / 27.0) * (45.0 / 15.0);
 
+    // if true, then robot is in field centric mode
+    private boolean m_fieldCentric = true;
+
+    // if true, then robot is in precision mode
+    private boolean m_precisionMode = false;
+    // need to remember the configured max rotation speed
+    private final double m_maxRotationSpeed;
+    private static final double PRECISION_MODE_SCALE_FACTOR = 1.0 / 6.0;
+    private static final double OUTREACH_MODE_SCALE_FACTOR = 0.5;
+
     // Swerve drive object
-    private final SwerveDrive swerveDrive;
+    private final SwerveDrive m_swerveDrive;
 
     /**
      * Initialize {@link SwerveDrive} with the directory provided.
      *
      * @param directory Directory of swerve drive config files.
      */
-    public DriveTrain(File directory) {
+    public DriveTrain() {
+
         // Angle conversion factor is 360 / (GEAR RATIO * ENCODER RESOLUTION)
         // In this case the gear ratio is 12.8 motor revolutions per wheel rotation.
         // The encoder resolution per motor revolution is 1 per motor revolution.
@@ -67,115 +84,51 @@ public class DriveTrain extends SubsystemBase {
         // objects being created.
         SwerveDriveTelemetry.verbosity = TelemetryVerbosity.HIGH;
         try {
-            swerveDrive = new SwerveParser(directory).createSwerveDrive(MAX_SPEED, angleConversionFactor, driveConversionFactor);
+            File jsonDir = new File(Filesystem.getDeployDirectory(), "swerve");
+            m_swerveDrive = new SwerveParser(jsonDir).createSwerveDrive(MAX_SPEED, angleConversionFactor, driveConversionFactor);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
 
+        // remember configured max rotation speed
+        m_maxRotationSpeed = m_swerveDrive.getMaximumAngularVelocity();
+
         // Heading correction should only be used while controlling the robot via angle.
-        swerveDrive.setHeadingCorrection(false);
+        m_swerveDrive.setHeadingCorrection(false);
         
-        swerveDrive.setCosineCompensator(false);// !SwerveDriveTelemetry.isSimulation); // Disables cosine compensation
+        m_swerveDrive.setCosineCompensator(false);// !SwerveDriveTelemetry.isSimulation); // Disables cosine compensation
                                                 // for simulations since it causes discrepancies not seen in real life.
     }
 
     /**
-     * Command to drive the robot using translative values and heading as a setpoint.
-     *
-     * @param translationX Translation in the X direction. Cubed for smoother
-     *                     controls.
-     * @param translationY Translation in the Y direction. Cubed for smoother
-     *                     controls.
-     * @param headingX     Heading X to calculate angle of the joystick.
-     * @param headingY     Heading Y to calculate angle of the joystick.
-     * @return Drive command.
-     */
-    public Command driveCommand(DoubleSupplier translationX, DoubleSupplier translationY, DoubleSupplier headingX,
-            DoubleSupplier headingY) {
-        // swerveDrive.setHeadingCorrection(true); // Normally you would want heading
-        // correction for this kind of control.
-        return run(() -> {
-
-            Translation2d scaledInputs = SwerveMath.cubeTranslation(new Translation2d(translationX.getAsDouble(),
-                    translationY.getAsDouble()));
-
-            // Make the robot move
-            driveFieldOriented(swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(), scaledInputs.getY(),
-                    headingX.getAsDouble(),
-                    headingY.getAsDouble(),
-                    swerveDrive.getOdometryHeading().getRadians(),
-                    swerveDrive.getMaximumVelocity()));
-        });
-    }
-
-    /**
-     * Command to drive the robot using translative values and heading as a setpoint.
-     *
-     * @param translationX Translation in the X direction.
-     * @param translationY Translation in the Y direction.
-     * @param rotation     Rotation as a value between [-1, 1] converted to radians.
-     * @return Drive command.
-     */
-    public Command simDriveCommand(DoubleSupplier translationX, DoubleSupplier translationY, DoubleSupplier rotation) {
-        // swerveDrive.setHeadingCorrection(true); // Normally you would want heading
-        // correction for this kind of control.
-        return run(() -> {
-            // Make the robot move
-            driveFieldOriented(swerveDrive.swerveController.getTargetSpeeds(translationX.getAsDouble(),
-                    translationY.getAsDouble(),
-                    rotation.getAsDouble() * Math.PI,
-                    swerveDrive.getOdometryHeading().getRadians(),
-                    swerveDrive.getMaximumVelocity()));
-        });
-    }
-
-    /**
-     * Command to characterize the robot drive motors using SysId
-     *
-     * @return SysId Drive Command
-     */
-    public Command sysIdDriveMotorCommand() {
-        return SwerveDriveTest.generateSysIdCommand(
-                SwerveDriveTest.setDriveSysIdRoutine(
-                        new Config(),
-                        this, swerveDrive, 12),
-                3.0, 5.0, 3.0);
-    }
-
-    /**
-     * Command to characterize the robot angle motors using SysId
-     *
-     * @return SysId Angle Command
-     */
-    public Command sysIdAngleMotorCommand() {
-        return SwerveDriveTest.generateSysIdCommand(
-                SwerveDriveTest.setAngleSysIdRoutine(
-                        new Config(),
-                        this, swerveDrive),
-                3.0, 5.0, 3.0);
-    }
-
-    /**
      * Command to drive the robot using translative values and heading as angular velocity.
+     * Inputs are deadbanded and squared.
      *
-     * @param translationX     Translation in the X direction. Cubed for smoother
-     *                         controls.
-     * @param translationY     Translation in the Y direction. Cubed for smoother
-     *                         controls.
-     * @param angularRotationX Angular velocity of the robot to set. Cubed for
-     *                         smoother controls.
+     * @param translationX     Translation in the X direction. 
+     * @param translationY     Translation in the Y direction. 
+     * @param angularRotationX Angular velocity of the robot to set. 
      * @return Drive command.
      */
-    public Command driveCommand(DoubleSupplier translationX, DoubleSupplier translationY, DoubleSupplier angularRotationX) {
+    public Command driveCommand(DoubleSupplier translationX, DoubleSupplier translationY, DoubleSupplier angularRotation, BooleanSupplier robotCentric) {
         return run(() -> {
-            // Make the robot move
-            swerveDrive.drive(SwerveMath.cubeTranslation(new Translation2d(
-                    translationX.getAsDouble() * swerveDrive.getMaximumVelocity(),
-                    translationY.getAsDouble() * swerveDrive.getMaximumVelocity())),
-                    Math.pow(angularRotationX.getAsDouble(), 3) * swerveDrive.getMaximumAngularVelocity(),
-                    true,
+            // field centric: flip direction if we are Red
+            // robot centric (for 2024): input is on the BACK of the robot, so flip to match the camera
+            double flipDirection = (robotCentric.getAsBoolean() || isRedAlliance()) ? -1.0 : 1.0;
+
+            m_swerveDrive.drive(
+                new Translation2d(
+                    flipDirection * modifyAxis(translationX.getAsDouble()) * m_swerveDrive.getMaximumVelocity(),
+                    flipDirection * modifyAxis(translationY.getAsDouble()) * m_swerveDrive.getMaximumVelocity()),
+                    modifyAxis(angularRotation.getAsDouble()) * m_swerveDrive.getMaximumAngularVelocity(),
+                    !robotCentric.getAsBoolean(),
                     false);
         });
+    }
+
+    private double modifyAxis(double value) {
+        value = MathUtil.applyDeadband(value, JOYSTICK_DEADBAND);
+        // Square the axis
+        return Math.copySign(value * value, value);
     }
 
     /**
@@ -202,7 +155,7 @@ public class DriveTrain extends SubsystemBase {
      *                      robot-relative.
      */
     public void drive(Translation2d translation, double rotation, boolean fieldRelative) {
-        swerveDrive.drive(translation,
+        m_swerveDrive.drive(translation,
                 rotation,
                 fieldRelative,
                 false); // Open loop is disabled since it shouldn't be used most of the time.
@@ -214,7 +167,7 @@ public class DriveTrain extends SubsystemBase {
      * @param velocity Velocity according to the field.
      */
     public void driveFieldOriented(ChassisSpeeds velocity) {
-        swerveDrive.driveFieldOriented(velocity);
+        m_swerveDrive.driveFieldOriented(velocity);
     }
 
     /**
@@ -222,8 +175,43 @@ public class DriveTrain extends SubsystemBase {
      *
      * @param velocity Robot oriented {@link ChassisSpeeds}
      */
-    public void drive(ChassisSpeeds velocity) {
-        swerveDrive.drive(velocity);
+    public void driveRobotOriented(ChassisSpeeds velocity) {
+        m_swerveDrive.drive(velocity);
+    }
+
+        // for the beginning of auto rountines
+    public void resetDrivingModes() {
+        setFieldCentricMode(true);
+        setPrecisionMode(false);
+    }
+
+    // toggle whether driving is field-centric
+    public void toggleFieldCentric() {
+        setFieldCentricMode(!m_fieldCentric);
+    }
+
+    // toggle precision mode for driving
+    public void togglePrecisionMode() {
+        setPrecisionMode(!m_precisionMode);
+    }
+
+    public void setFieldCentricMode(boolean fieldCentricMode) {
+        m_fieldCentric = fieldCentricMode;
+    }
+
+    public void setPrecisionMode(boolean precisionMode) {
+        m_precisionMode = precisionMode;
+        double maxSpeed = MAX_SPEED;
+        double maxAngSpeed = m_maxRotationSpeed;
+        
+        if (precisionMode) {
+            maxSpeed = maxSpeed * PRECISION_MODE_SCALE_FACTOR;
+            maxAngSpeed = maxAngSpeed * PRECISION_MODE_SCALE_FACTOR;
+        } else if (Constants.OUTREACH_MODE) {
+            maxSpeed = maxSpeed * OUTREACH_MODE_SCALE_FACTOR;
+            maxAngSpeed = maxAngSpeed * OUTREACH_MODE_SCALE_FACTOR;
+        }
+        m_swerveDrive.setMaximumSpeeds(maxSpeed, maxSpeed, maxAngSpeed);
     }
 
     @Override
@@ -239,9 +227,9 @@ public class DriveTrain extends SubsystemBase {
      *
      * @return {@link SwerveDriveKinematics} of the swerve drive.
      */
-    public SwerveDriveKinematics getKinematics() {
-        return swerveDrive.kinematics;
-    }
+    // public SwerveDriveKinematics getKinematics() {
+    //     return swerveDrive.kinematics;
+    // }
 
     /**
      * Resets odometry to the given pose. Gyro angle and module positions do not
@@ -249,10 +237,10 @@ public class DriveTrain extends SubsystemBase {
      * However, if either gyro angle or module position is reset, this must
      * be called in order for odometry to keep working.
      *
-     * @param initialHolonomicPose The pose to set the odometry to
+     * @param pose The pose to set the odometry to
      */
-    public void resetOdometry(Pose2d initialHolonomicPose) {
-        swerveDrive.resetOdometry(initialHolonomicPose);
+    public void setPose(Pose2d pose) {
+        m_swerveDrive.resetOdometry(pose);
     }
 
     /**
@@ -262,7 +250,7 @@ public class DriveTrain extends SubsystemBase {
      * @return The robot's pose
      */
     public Pose2d getPose() {
-        return swerveDrive.getPose();
+        return m_swerveDrive.getPose();
     }
 
     /**
@@ -271,24 +259,24 @@ public class DriveTrain extends SubsystemBase {
      * @param chassisSpeeds Chassis Speeds to set.
      */
     public void setChassisSpeeds(ChassisSpeeds chassisSpeeds) {
-        swerveDrive.setChassisSpeeds(chassisSpeeds);
+        m_swerveDrive.setChassisSpeeds(chassisSpeeds);
     }
 
     /**
-     * Post the trajectory to the field.
+     * Display a trajectory on the field.
      *
-     * @param trajectory The trajectory to post.
+     * @param trajectory The trajectory to display.
      */
     public void postTrajectory(Trajectory trajectory) {
-        swerveDrive.postTrajectory(trajectory);
+        m_swerveDrive.postTrajectory(trajectory);
     }
 
     /**
      * Resets the gyro angle to zero and resets odometry to the same position, but
      * facing toward 0.
      */
-    public void zeroGyro() {
-        swerveDrive.zeroGyro();
+    public void zeroHeading() {
+        m_swerveDrive.zeroGyro();
     }
 
     /**
@@ -308,23 +296,23 @@ public class DriveTrain extends SubsystemBase {
      * <p>
      * If red alliance rotate the robot 180 after the drviebase zero command
      */
-    public void zeroGyroWithAlliance() {
-        if (isRedAlliance()) {
-            zeroGyro();
-            // Set the pose 180 degrees
-            resetOdometry(new Pose2d(getPose().getTranslation(), Rotation2d.fromDegrees(180)));
-        } else {
-            zeroGyro();
-        }
-    }
+    // public void zeroGyroWithAlliance() {
+    //     if (isRedAlliance()) {
+    //         zeroGyro();
+    //         // Set the pose 180 degrees
+    //         resetOdometry(new Pose2d(getPose().getTranslation(), Rotation2d.fromDegrees(180)));
+    //     } else {
+    //         zeroGyro();
+    //     }
+    // }
 
     /**
      * Sets the drive motors to brake/coast mode.
      *
      * @param brake True to set motors to brake mode, false for coast.
      */
-    public void setMotorBrake(boolean brake) {
-        swerveDrive.setMotorIdleMode(brake);
+    public void setBrakeMode(boolean brake) {
+        m_swerveDrive.setMotorIdleMode(brake);
     }
 
     /**
@@ -352,7 +340,7 @@ public class DriveTrain extends SubsystemBase {
      */
     public ChassisSpeeds getTargetSpeeds(double xInput, double yInput, double headingX, double headingY) {
         Translation2d scaledInputs = SwerveMath.cubeTranslation(new Translation2d(xInput, yInput));
-        return swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(),
+        return m_swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(),
                 scaledInputs.getY(),
                 headingX,
                 headingY,
@@ -373,7 +361,7 @@ public class DriveTrain extends SubsystemBase {
     public ChassisSpeeds getTargetSpeeds(double xInput, double yInput, Rotation2d angle) {
         Translation2d scaledInputs = SwerveMath.cubeTranslation(new Translation2d(xInput, yInput));
 
-        return swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(),
+        return m_swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(),
                 scaledInputs.getY(),
                 angle.getRadians(),
                 getHeading().getRadians(),
@@ -386,7 +374,7 @@ public class DriveTrain extends SubsystemBase {
      * @return A ChassisSpeeds object of the current field-relative velocity
      */
     public ChassisSpeeds getFieldVelocity() {
-        return swerveDrive.getFieldVelocity();
+        return m_swerveDrive.getFieldVelocity();
     }
 
     /**
@@ -395,7 +383,7 @@ public class DriveTrain extends SubsystemBase {
      * @return A {@link ChassisSpeeds} object of the current velocity
      */
     public ChassisSpeeds getRobotVelocity() {
-        return swerveDrive.getRobotVelocity();
+        return m_swerveDrive.getRobotVelocity();
     }
 
     /**
@@ -404,7 +392,7 @@ public class DriveTrain extends SubsystemBase {
      * @return {@link SwerveController} from the {@link SwerveDrive}.
      */
     public SwerveController getSwerveController() {
-        return swerveDrive.swerveController;
+        return m_swerveDrive.swerveController;
     }
 
     /**
@@ -413,14 +401,14 @@ public class DriveTrain extends SubsystemBase {
      * @return The {@link SwerveDriveConfiguration} fpr the current drive.
      */
     public SwerveDriveConfiguration getSwerveDriveConfiguration() {
-        return swerveDrive.swerveDriveConfiguration;
+        return m_swerveDrive.swerveDriveConfiguration;
     }
 
     /**
      * Lock the swerve drive to prevent it from moving.
      */
     public void lock() {
-        swerveDrive.lockPose();
+        m_swerveDrive.lockPose();
     }
 
     /**
@@ -429,6 +417,32 @@ public class DriveTrain extends SubsystemBase {
      * @return The heading as a {@link Rotation2d} angle
      */
     public Rotation2d getPitch() {
-        return swerveDrive.getPitch();
+        return m_swerveDrive.getPitch();
+    }
+
+    /**
+     * Command to characterize the robot drive motors using SysId
+     *
+     * @return SysId Drive Command
+     */
+    public Command sysIdDriveMotorCommand() {
+        return SwerveDriveTest.generateSysIdCommand(
+                SwerveDriveTest.setDriveSysIdRoutine(
+                        new Config(),
+                        this, m_swerveDrive, 12),
+                3.0, 5.0, 3.0);
+    }
+
+    /**
+     * Command to characterize the robot angle motors using SysId
+     *
+     * @return SysId Angle Command
+     */
+    public Command sysIdAngleMotorCommand() {
+        return SwerveDriveTest.generateSysIdCommand(
+                SwerveDriveTest.setAngleSysIdRoutine(
+                        new Config(),
+                        this, m_swerveDrive),
+                3.0, 5.0, 3.0);
     }
 }

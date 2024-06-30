@@ -4,11 +4,9 @@
 
 package frc.robot;
 
-import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import frc.robot.subsystems.DriveTrain;
-import java.io.File;
 
 /**
  * This class is where the bulk of the robot should be declared. Since
@@ -21,10 +19,10 @@ import java.io.File;
 public class RobotContainer {
 
     // Replace with CommandPS4Controller or CommandJoystick if needed
-    final CommandXboxController driverXbox = new CommandXboxController(0);
+    private final CommandXboxController m_driverController = new CommandXboxController(0);
+
     // The robot's subsystems and commands are defined here...
-    private final DriveTrain drivebase = new DriveTrain(new File(Filesystem.getDeployDirectory(),
-            "swerve/neo"));
+    private final DriveTrain m_driveTrain = new DriveTrain();
 
     /**
      * The container for the robot. Contains subsystems, OI devices, and commands.
@@ -35,10 +33,14 @@ public class RobotContainer {
     }
 
     private void configureBindings() {
-        driverXbox.a().onTrue((Commands.runOnce(drivebase::zeroGyro)));
-    }
+        m_driveTrain.setDefaultCommand(
+            m_driveTrain.driveCommand( 
+            () -> -m_driverController.getLeftY(),
+            () -> -m_driverController.getLeftX(),
+            () -> -m_driverController.getRightX(),
+            m_driverController.rightBumper()));
 
-    public void setMotorBrake(boolean brake) {
-        drivebase.setMotorBrake(brake);
+        m_driverController.a().onTrue((Commands.runOnce(m_driveTrain::zeroHeading)));
+        m_driverController.x().onTrue((Commands.runOnce(m_driveTrain::lock)));
     }
 }

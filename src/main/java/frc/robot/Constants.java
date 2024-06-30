@@ -14,4 +14,5 @@ package frc.robot;
  */
 public final class Constants
 {
+    public static final boolean OUTREACH_MODE = false;
 }
